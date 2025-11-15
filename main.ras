@@ -1,0 +1,17 @@
+
+
+start:
+    mov r1, 2
+    mov r2, 3
+    call add_fn 
+    hlt
+
+add_fn:   
+    push fp
+    mov fp, sp 
+    push 20
+    add r1, r2 
+    pop r3 
+    add r1, r3    
+    pop fp 
+    ret

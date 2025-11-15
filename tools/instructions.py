@@ -1,0 +1,59 @@
+from enum import Enum
+
+class Inst(Enum):
+    MOV_REG = 0x01
+    MOV_IMM = 0x02
+
+    LOAD    = 0x03
+    STORE   = 0x04
+
+    ADD_REG = 0x05
+    ADD_IMM = 0x06
+    SUB_REG = 0x07
+    SUB_IMM = 0x08
+    MUL_REG = 0x09
+    MUL_IMM = 0x0A
+    DIV_REG = 0x0B
+    DIV_IMM = 0x0C
+    AND_REG = 0x0D
+    AND_IMM = 0x0E
+    OR_REG  = 0x0F
+    OR_IMM  = 0x10
+
+    CMP_REG = 0x11
+    CMP_IMM = 0x12
+
+    INC     = 0x13
+    DEC     = 0x14
+
+    PUSH_REG = 0x15
+    PUSH_IMM = 0x16
+    POP      = 0x17
+
+    CALL     = 0x18
+    RET      = 0x19
+
+    JMP      = 0x1A
+    JG       = 0x1B
+    JGE      = 0x1C
+    JE       = 0x1D
+    JA       = 0x1E
+    JAE      = 0x1F
+
+    HLT      = 0x20
+
+
+
+class Reg(Enum):
+    R1 = 0x00
+    R2 = 0x01
+    R3 = 0x02
+    R4 = 0x03
+    R5 = 0x04
+    R6 = 0x05
+    R7 = 0x06
+    R8 = 0x07
+
+    PC = 0x08
+    SP = 0x09
+    FP = 0x0A
