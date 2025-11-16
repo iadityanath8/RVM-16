@@ -625,7 +625,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 📞 Contact
 
-- GitHub: [@yourusername](https://github.com/iadityanath8)
+- GitHub: [@iadityanath8](https://github.com/iadityanath8)
 - Email: iadityanath8@gmail.com
 
 ---
