@@ -3,6 +3,8 @@ import re
 
 INST_TABLE = {
     'mov': {'reg': Inst.MOV_REG, 'imm': Inst.MOV_IMM, 'argc': 2},
+    'load': {'opcode': Inst.LOAD, 'argc': 2},
+    'store': {'reg': Inst.STORE_REG, 'imm': Inst.STORE_IMM, 'argc': 2},
     'add': {'reg': Inst.ADD_REG, 'imm': Inst.ADD_IMM, 'argc': 2},
     'sub': {'reg': Inst.SUB_REG, 'imm': Inst.SUB_IMM, 'argc': 2},
     'mul': {'reg': Inst.MUL_REG, 'imm': Inst.MUL_IMM, 'argc': 2},
@@ -53,6 +55,8 @@ class Assembler:
         self.cleaned = [line for line in content if line.strip() != ""]
         self.labels = {}
         self.program  = bytearray()
+        self.entry_label = None 
+        self.entry_point = None 
 
     def get_reg(self,name: str) -> Reg:
         key = name.lower()
@@ -82,7 +86,6 @@ class Assembler:
         else:
             return entry["imm"]
 
-
     def get_reg_imm(self,cs:str) -> int: 
         cs = cs.lower().strip()
 
@@ -95,55 +98,213 @@ class Assembler:
         elif cs.startswith('0x'):
             return u16(int(cs, 16))
         
-        return ValueError(f"Invalid operand: {cs}")
+        raise ValueError(f"Invalid operand: {cs}")
 
     def pass_label(self, lines):
         pc = 0
-
         for line in lines:
             line = line.strip()
-
+            
             if not line or line.startswith(";") or line.startswith("#"):
                 continue
-
-            if line.endswith(":"):
-                name = line[:-1].strip()
-                self.labels[name] = pc
+            
+            if line.startswith(".entry"):
+                parts = line.split()
+                if len(parts) != 2:
+                    raise ValueError(".entry must be followed by a label name")
+                self.entry_label = parts[1].strip()
                 continue
-
+            
+            if ":" in line:
+                colon_pos = line.find(":")
+                label_name = line[:colon_pos].strip()
+                self.labels[label_name] = pc
+                
+                after_label = line[colon_pos + 1:].strip()
+                if not after_label or after_label.startswith(";") or after_label.startswith("#"):
+                    continue  
+                
+                line = after_label
+            
             parts = line.replace(",", " ").split()
+            if not parts:
+                continue
+            
             inst = parts[0].lower()
-
+            
+            if inst not in INST_TABLE:
+                continue     
+            
             entry = INST_TABLE[inst]
-            argc  = entry["argc"]
-
-            pc += 1
-
+            
+            if inst == 'load':
+                pc += 5  
+                continue
+            
+            if inst == 'store':
+                bracket_end = line.find(']')
+                if bracket_end == -1:
+                    raise ValueError("STORE instruction missing closing bracket")
+                
+                after_bracket = line[bracket_end + 1:].strip()
+                if after_bracket.startswith(','):
+                    after_bracket = after_bracket[1:].strip()
+                
+                value_str = after_bracket.split()[0].strip().lower()
+                
+                if value_str in REG_TABLE or value_str in ('sp', 'fp', 'pc'):
+                    pc += 4  
+                else:
+                    pc += 5  
+                continue
+            
+            argc = entry["argc"]
+            pc += 1  # opcode byte
+            
             if argc == 0:
                 continue
-
+            
             if argc == 1:
                 arg = parts[1].lower()
-
-                if arg in self.labels:  
+                # Check if it's a label (will be resolved as 16-bit address)
+                if arg in self.labels:
                     pc += 2
-                elif arg.startswith("r"):
+                # Check if it's a register (8-bit)
+                elif arg.startswith("r") or arg in ("sp", "fp", "pc"):
                     pc += 1
+                # Otherwise it's an immediate (16-bit)
                 else:
                     pc += 2
                 continue
 
             if argc == 2:
-                pc += 1
-
-                op2 = parts[2].lower()
-
-                if op2.startswith("r"):
-                    pc += 1   
+                pc += 1  # First operand (always register, 8-bit)
+                operand = parts[2].lower()
+                
+                # Second operand: register (8-bit) or immediate (16-bit)
+                if operand.startswith("r") or operand in ("sp", "fp", "pc"):
+                    pc += 1
                 else:
-                    pc += 2   
+                    pc += 2
+        
+        # Set entry point
+        if self.entry_label:
+            if self.entry_label not in self.labels:
+                raise ValueError(f"Entry label '{self.entry_label}' not defined")
+            self.entry_point = self.labels[self.entry_label]
+        else:
+            if "start" in self.labels:
+                self.entry_point = self.labels["start"]
+            else:
+                raise ValueError("No .entry directive and no 'start:' label found!")
+        
         return pc
 
+    def parse_address_expression(self, expr: str) -> tuple[int, int]:
+        """
+        Parse address expressions like:
+        - [r1 + 100]
+        - [r2 - 50]
+        - [r3]
+        
+        Returns: (base_register_code, offset)
+        """
+        expr = expr.strip()
+        
+        if expr.startswith('[') and expr.endswith(']'):
+            expr = expr[1:-1].strip()
+        
+        pattern = r'^([a-zA-Z_]\w*)\s*([+\-])\s*(\d+|0x[0-9a-fA-F]+)$'
+        match = re.match(pattern, expr)
+        
+        if match:
+            reg, op, value = match.groups()
+            
+            base_reg = self.get_reg(reg).value
+            
+            if value.startswith('0x'):
+                offset = int(value, 16)
+            else:
+                offset = int(value)
+            
+            if op == '-':
+                offset = (-offset) & 0xFFFF  # Two's complement for 16-bit
+            
+            return (base_reg, offset)
+        
+        simple_pattern = r'^([a-zA-Z_]\w*)$'
+        match = re.match(simple_pattern, expr)
+        
+        if match:
+            reg = match.group(1)
+            base_reg = self.get_reg(reg).value
+            return (base_reg, 0)
+        
+        raise ValueError(f"Invalid address expression: [{expr}]. Use format: [reg], [reg + offset], or [reg - offset]")
+
+    def parse_load_instruction(self, cs: str, parts: list):
+        """
+        Parse LOAD instruction: load r1, [r2 +/- offset]
+        Supports:
+        - load r0, [r1 + 100]
+        - load r0, [r1 - 50]
+        - load r0, [r1]
+        """
+        r1_code = self.get_reg(parts[1]).value
+        
+        bracket_start = cs.find('[')
+        bracket_end = cs.find(']')
+        
+        if bracket_start == -1 or bracket_end == -1:
+            raise ValueError(f"LOAD instruction requires bracket syntax: load r1, [address]")
+        
+        addr_expr = cs[bracket_start:bracket_end + 1]
+        r2_code, offset = self.parse_address_expression(addr_expr)
+        
+        offset_bytes = u16(offset)
+        
+        # Emit: LOAD opcode, r1, r2, offset (2 bytes)
+        load_code = Inst.LOAD.value
+        self.program.extend([load_code, r1_code, r2_code, *offset_bytes])
+ 
+    def parse_store_instruction(self, cs: str, parts: list):
+        """
+        Parse STORE instruction: store [r1 +/- offset], value
+        Supports:
+        - store [fp - 2], 23        (immediate)
+        - store [fp - 4], r0        (register)
+        - store [r1 + 100], r2      (register)
+        """
+        bracket_start = cs.find('[')
+        bracket_end = cs.find(']')
+        
+        if bracket_start == -1 or bracket_end == -1:
+            raise ValueError(f"STORE instruction requires bracket syntax: store [address], value")
+        
+        addr_expr = cs[bracket_start:bracket_end + 1]
+        r1_code, offset = self.parse_address_expression(addr_expr)
+        
+        after_bracket = cs[bracket_end + 1:].strip()
+        if after_bracket.startswith(','):
+            after_bracket = after_bracket[1:].strip()
+        
+        value_str = after_bracket.split()[0].strip()
+        
+        offset_bytes = u16(offset)
+        
+        if value_str.lower() in REG_TABLE or value_str.lower() in ('sp', 'fp', 'pc'):
+            src_code = self.get_reg(value_str).value
+            store_code = Inst.STORE_REG.value
+            self.program.extend([store_code, r1_code, *offset_bytes, src_code])
+        else:
+            if value_str.startswith('0x'):
+                imm = int(value_str, 16)
+            else:
+                imm = int(value_str)
+            
+            imm_bytes = u16(imm)
+            store_code = Inst.STORE_IMM.value
+            self.program.extend([store_code, r1_code, *offset_bytes, *imm_bytes])
 
     def parse_line(self,cs:str,idx:int):
         cs = cs.strip('\n')
@@ -155,42 +316,21 @@ class Assembler:
             parts = re.split(r"[,\s]+", cs.strip())
 
             match parts[0]:
-                case 'mov':
+                case 'mov' | 'add' | 'sub' | 'mul' | 'div' | 'and' | 'or':
                     r_code = self.get_reg(parts[1]).value
-                    mov_code = self.get_opcode('mov',parts).value
+                    mov_code = self.get_opcode(parts[0],parts).value
                     r_imm_code = self.get_reg_imm(parts[2])                
                     self.program.extend([mov_code,r_code,*as_list(r_imm_code)])
-                case 'add':
-                    r_code = self.get_reg(parts[1]).value
-                    add_code = self.get_opcode('add', parts).value
-                    r_imm_code = self.get_reg_imm(parts[2])
-                    self.program.extend([add_code,r_code,*as_list(r_imm_code)])
-                case 'mul':
-                    r_code = self.get_reg(parts[1]).value
-                    mul_code = self.get_opcode('mul',parts).value
-                    r_imm_code = self.get_reg_imm(parts[2])
-                    self.program.extend([mul_code,r_code,*as_list(r_imm_code)])
-                case 'div':
-                    r_code = self.get_reg(parts[1]).value
-                    div_code = self.get_opcode('div',parts).value
-                    r_imm_code = self.get_reg_imm(parts[2])
-                    self.program.extend([div_code,r_code,*as_list(r_imm_code)])
-                case 'and':
-                    r_code = self.get_reg(parts[1]).value
-                    and_code = self.get_opcode('and',parts).value
-                    r_imm_code = self.get_reg_imm(parts[2])
-                    self.program.extend([and_code,r_code,*as_list(r_imm_code)])
-                case 'or':
-                    r_code = self.get_reg(parts[1]).value
-                    or_code = self.get_opcode('or',parts).value
-                    r_imm_code = self.get_reg_imm(parts[2])
-                    self.program.extend([or_code,r_code,*as_list(r_imm_code)])    
                 
-                case 'inc':
+                case 'load':
+                    self.parse_load_instruction(cs, parts)
+                case 'store':
+                    self.parse_store_instruction(cs, parts)
+                
+                case 'inc' | 'dec':
                     inc_code = self.get_opcode('inc',parts).value
                     r_imm_code = self.get_reg_imm(parts[1])
                     self.program.extend([inc_code,r_imm_code])
-
 
                 # jump inst
                 case 'cmp':
@@ -205,19 +345,15 @@ class Assembler:
                     self.program.extend([jmp_code,*lbl])
                 
                 #stack inst
-                case 'push':
-                    push_code = self.get_opcode('push', parts).value
+                case 'push' | 'pop':
+                    push_code = self.get_opcode(parts[0], parts).value
                     addr = self.get_reg_imm(parts[1])
                     self.program.extend([push_code, *as_list(addr)])
-
-                case 'pop':
-                    pop_code = self.get_opcode('pop',parts).value
-                    addr = self.get_reg_imm(parts[1])
-                    self.program.extend([pop_code,*as_list(addr)])
                 
                 case 'call':
                     call_code = self.get_opcode('call', parts).value
-                    addr = u16(self.labels[parts[1]])
+                    addr = u16(self.labels[parts[1]] + 2)
+                    print(self.labels[parts[1]] + 2)
                     self.program.extend([call_code,*as_list(addr)])
 
                 case 'ret':
@@ -227,21 +363,35 @@ class Assembler:
                 case 'hlt':
                     hlt_code = self.get_opcode('hlt', parts)
                     self.program.append(hlt_code.value)
-                case _:
+                case ';':
                     pass
+                case '.entry':
+                    pass
+                case _:
+                    raise ValueError("Unknown instruction", parts[0])
 
     def assemble(self):        
         self.pass_label(self.cleaned)
         for idx, line in enumerate(self.cleaned):
             self.parse_line(line,idx)
         
-        return self.program
+        if self.entry_point is None:
+            raise ValueError('Entry point not set (use `.entry <label>`)')
+
+        entry_bytes = u16(self.entry_point + 2)
+        full_program = bytearray(entry_bytes) + self.program
+        return full_program
 
     
 if __name__ == '__main__':
     content = open("main.ras").readlines()
     ass = Assembler(content)
     bytecode = ass.assemble()
+
+    for i in bytecode:  
+        print(i, end=",")
+
+    print("This is",ass.entry_point)
 
     with open('main.rvm','wb') as f:
         f.write(bytecode)

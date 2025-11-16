@@ -4,44 +4,44 @@ class Inst(Enum):
     MOV_REG = 0x01
     MOV_IMM = 0x02
 
-    LOAD    = 0x03
-    STORE   = 0x04
+    LOAD = 0x03
+    STORE_REG = 0x04
+    STORE_IMM = 0x05
+    
+    ADD_REG = 0x06
+    ADD_IMM = 0x07
+    SUB_REG = 0x08
+    SUB_IMM = 0x09
+    MUL_REG = 0x0A
+    MUL_IMM = 0x0B
+    DIV_REG = 0x0C
+    DIV_IMM = 0x0D
+    AND_REG = 0x0E
+    AND_IMM = 0x0F
+    OR_REG  = 0x10
+    OR_IMM  = 0x11
 
-    ADD_REG = 0x05
-    ADD_IMM = 0x06
-    SUB_REG = 0x07
-    SUB_IMM = 0x08
-    MUL_REG = 0x09
-    MUL_IMM = 0x0A
-    DIV_REG = 0x0B
-    DIV_IMM = 0x0C
-    AND_REG = 0x0D
-    AND_IMM = 0x0E
-    OR_REG  = 0x0F
-    OR_IMM  = 0x10
+    CMP_REG = 0x12
+    CMP_IMM = 0x13
 
-    CMP_REG = 0x11
-    CMP_IMM = 0x12
+    INC     = 0x14
+    DEC     = 0x15
 
-    INC     = 0x13
-    DEC     = 0x14
+    PUSH_REG = 0x16
+    PUSH_IMM = 0x17
+    POP      = 0x18
 
-    PUSH_REG = 0x15
-    PUSH_IMM = 0x16
-    POP      = 0x17
+    CALL     = 0x19
+    RET      = 0x1A
 
-    CALL     = 0x18
-    RET      = 0x19
+    JMP      = 0x1B
+    JG       = 0x1C
+    JGE      = 0x1D
+    JE       = 0x1E
+    JA       = 0x1F
+    JAE      = 0x20
 
-    JMP      = 0x1A
-    JG       = 0x1B
-    JGE      = 0x1C
-    JE       = 0x1D
-    JA       = 0x1E
-    JAE      = 0x1F
-
-    HLT      = 0x20
-
+    HLT      = 0x21
 
 
 class Reg(Enum):

@@ -9,6 +9,12 @@
 #include "memory.h"
 #include <assert.h>
 
+
+#define vm_fetch_label(vm) \
+    Word entry = vm->mem[0] | (vm->mem[1] << 8);\
+    vm->pc = entry;
+
+
 typedef uint16_t    Word;
 typedef uint8_t     Byte;
 typedef uint32_t    u32;
@@ -25,31 +31,33 @@ typedef struct {
 }Vm;
 
 
-inline void vm_init(Vm* vm) {
+static inline void vm_init(Vm* vm) {
     vm->cf = vm->sf = vm->of = vm->zf = false;
-    vm->pc = 0;
     vm->sp = 0xFFFE;
     vm->fp = 0xFFFE;
+    vm->pc = 0x000;
 
     vm->halted = false;
     for (int i = 0;i < MAX_REG; i++) vm->regs[i] = 0;
     for (int i = 0;i < MAX; i++) vm->mem[i] = 0;
 }
 
-void vm_load_program(Vm* vm, Byte* program, Word len){
+
+static inline void vm_load_program(Vm* vm, Byte* program, Word len){
     Byte* mem = vm->mem;
     for (int i =0;i < len;i++) {
         mem[i] = program[i];
     }
+    vm_fetch_label(vm)
 }
 
-inline Word vm_fetch16(Vm* vm) {
+static inline Word vm_fetch16(Vm* vm) {
     Byte low = vm->mem[vm->pc++];
     Byte high = vm->mem[vm->pc++];
     return (Word)((high << 8) | low);
 } 
 
-inline Word vm_getRegister(Vm* vm, Reg reg) {
+static inline Word vm_getRegister(Vm* vm, Reg reg) {
     if (reg >= MAX_REG) {
         switch (reg) {
             case SP: return vm->sp;
@@ -64,7 +72,7 @@ inline Word vm_getRegister(Vm* vm, Reg reg) {
 }
 
 
-inline void vm_setregister(Vm* vm, Reg reg, Word value) {
+static inline void vm_setregister(Vm* vm, Reg reg, Word value) {
     if (reg >= R1 && reg <= R8)
         vm->regs[reg] = value;
     else if (reg == PC)
@@ -80,12 +88,12 @@ inline void vm_setregister(Vm* vm, Reg reg, Word value) {
 }
 
 
-inline void vm_store16(Vm* vm, Word address, Word value) {
+static inline void vm_store16(Vm* vm, Word address, Word value) {
     vm->mem[address] = value & 0xFF;
     vm->mem[address + 1] = (value >> 8) & 0xFF; 
 }
 
-inline Byte vm_fetch8(Vm* vm) {
+static inline Byte vm_fetch8(Vm* vm) {
     return vm->mem[vm->pc++];
 }
 
@@ -96,20 +104,20 @@ inline Byte vm_fetch8(Vm* vm) {
     
  */
 
-void vm_push(Vm* vm, Word value) {
+static inline void vm_push(Vm* vm, Word value) {
     vm->sp-=2;
     vm->mem[vm->sp] = value & 0xFF;
     vm->mem[vm->sp + 1] = (value >> 8) & 0xFF; 
 }
 
 
-Word vm_pop(Vm *vm) {
+static inline Word vm_pop(Vm *vm) {
     Word value = vm->mem[vm->sp] | (vm->mem[vm->sp + 1] << 8);
     vm->sp += 2;
     return value;
 }
 
-void vm_step(Vm* vm) {
+static inline void vm_step(Vm* vm) {
     Inst opcode = vm_fetch8(vm);
     
     switch(opcode){
@@ -129,10 +137,10 @@ void vm_step(Vm* vm) {
             Byte r2 = vm_fetch8(vm);
             Word offset = vm_fetch16(vm);
             Word addr = vm_getRegister(vm, r2) + offset;
-            if (addr >= MAX) {printf("Invalid memory access"); break;}
+            if (addr >= MAX) {fprintf(stderr,"Invalid memory access"); break;}
             vm_setregister(vm, r1, (vm->mem[addr]) | (vm->mem[addr + 1] << 8)); 
         }break;
-        case STORE: {
+        case STORE_REG: {
             Byte r1 = vm_fetch8(vm);
             Word offset = vm_fetch16(vm);
             Byte src = vm_fetch8(vm);
@@ -140,6 +148,14 @@ void vm_step(Vm* vm) {
             if (addr >= MAX) {printf("Invalid memory access"); break;}
             vm_store16(vm, addr, vm_getRegister(vm, src));
         }break;
+        case STORE_IMM: {
+            Byte r1 = vm_fetch8(vm);         
+            Word offset = vm_fetch16(vm);    
+            Word imm = vm_fetch16(vm);       
+            Word addr = vm_getRegister(vm, r1) + offset;
+            if (addr >= MAX) {printf("Invalid memory access"); break;}
+            vm_store16(vm, addr, imm);
+        } break;
         case ADD_IMM: {
             Reg r1  = vm_fetch8(vm); 
             Word imm = vm_fetch16(vm);
@@ -177,6 +193,43 @@ void vm_step(Vm* vm) {
             bool sign_r = (result >> 15) & 1; // (+)
             vm->of = ((sign_a == sign_b) && (sign_a != sign_r)); 
         }break;
+        case SUB_IMM: {
+            Reg r1 = vm_fetch8(vm);
+            Word imm = vm_fetch16(vm);
+            Word value = vm_getRegister(vm, r1);
+            
+            u32 res = (u32)value - (u32)imm;
+            Word result = (Word)res;
+            vm_setregister(vm, r1, result);
+            
+            vm->cf = (value < imm);
+            vm->zf = (result == 0);
+            vm->sf = (result >> 15) & 1;
+            bool sign_a = (value >> 15) & 1;
+            bool sign_b = (imm >> 15) & 1;
+            bool sign_r = (result >> 15) & 1;
+            vm->of = ((sign_a != sign_b) && (sign_a != sign_r));
+        } break;
+
+        case SUB_REG: {
+            Reg r1 = vm_fetch8(vm);
+            Reg r2 = vm_fetch8(vm);
+            Word v1 = vm_getRegister(vm, r1);
+            Word v2 = vm_getRegister(vm, r2);
+            
+            u32 res = (u32)v1 - (u32)v2;
+            Word result = (Word)res;
+            
+            vm_setregister(vm, r1, result);
+            
+            vm->cf = (v1 < v2);
+            vm->zf = (result == 0);
+            vm->sf = (result >> 15) & 1;
+            bool sign_a = (v1 >> 15) & 1;
+            bool sign_b = (v2 >> 15) & 1;
+            bool sign_r = (result >> 15) & 1;
+            vm->of = ((sign_a != sign_b) && (sign_a != sign_r));
+        } break;
         case MUL_IMM: {
             Reg r1 = vm_fetch8(vm);
             Word value = vm_getRegister(vm,r1);
@@ -208,6 +261,52 @@ void vm_step(Vm* vm) {
             vm->sf = (res >> 15) & 1;    
             vm->cf = vm->of = ((res >> 16) != 0);
         }break;
+        case DIV_IMM: {
+            Reg r1 = vm_fetch8(vm);
+            Word dividend = vm_getRegister(vm, r1);
+            Word divisor = vm_fetch16(vm);
+            
+            // Check for division by zero
+            if (divisor == 0) {
+                fprintf(stderr, "Division by zero error\n");
+                vm->halted = true;
+                break;
+            }
+            
+            Word quotient = dividend / divisor;
+            Word remainder = dividend % divisor;
+            
+            vm_setregister(vm, r1, quotient);
+            
+            vm->zf = (quotient == 0);
+            vm->sf = (quotient >> 15) & 1;
+            vm->cf = 0;  
+            vm->of = 0;  
+        } break;
+
+        case DIV_REG: {
+            Reg r1 = vm_fetch8(vm);
+            Reg r2 = vm_fetch8(vm);
+            Word dividend = vm_getRegister(vm, r1);
+            Word divisor = vm_getRegister(vm, r2);
+            
+            // Check for division by zero
+            if (divisor == 0) {
+                fprintf(stderr, "Division by zero error\n");
+                vm->halted = true;
+                break;
+            }
+            
+            Word quotient = dividend / divisor;
+            Word remainder = dividend % divisor;
+            
+            vm_setregister(vm, r1, quotient);
+            
+            vm->zf = (quotient == 0);
+            vm->sf = (quotient >> 15) & 1;
+            vm->cf = 0;  // Clear carry flag for division
+            vm->of = 0;  // Clear overflow flag for division
+        } break;
         case JMP: {
             Word address = vm_fetch16(vm);
             vm->pc = address;
@@ -356,7 +455,7 @@ void vm_step(Vm* vm) {
     }    
 }
 
-void vm_dump_bytecode(Vm* vm, const char* filename, size_t size) {
+static inline void vm_dump_bytecode(Vm* vm, const char* filename, size_t size) {
     FILE* f = fopen(filename, "wb");
     if (!f) {
         perror("Error opening dump file");
@@ -373,7 +472,7 @@ void vm_dump_bytecode(Vm* vm, const char* filename, size_t size) {
     }
 }
 
-size_t vm_load_bytecode_from_file(Vm* vm, const char* filename) {
+static inline size_t vm_load_bytecode_from_file(Vm* vm, const char* filename) {
     FILE* f = fopen(filename, "rb");
     if (!f) {
         perror("Error opening file for loading");
@@ -398,6 +497,7 @@ size_t vm_load_bytecode_from_file(Vm* vm, const char* filename) {
     size_t read = fread(vm->mem, 1, file_size, f);
     fclose(f);
 
+    vm_fetch_label(vm)
     if (read != (size_t)file_size) {
         fprintf(stderr, "⚠️  Warning: read only %zu of %ld bytes\n", read, file_size);
     }
@@ -412,7 +512,7 @@ void vm_execute(Vm *vm) {
 }
 
 
-void debug_stack(Vm* vm, int count) {
+static inline void debug_stack(Vm* vm, int count) {
     printf("Stack (top -> bottom):\n");
     Word sp = vm->sp;
 
@@ -425,7 +525,7 @@ void debug_stack(Vm* vm, int count) {
 
 
 /* DEBUG */
-void print_internal(Vm* vm) {
+static inline void print_internal(Vm* vm) {
     printf("Flags Debug carry %d\n", vm->cf);
     printf("Flags Debug sign %d\n", vm->sf);
     printf("Flags Debug overflow %d\n", vm->of);

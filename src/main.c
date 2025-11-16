@@ -1,16 +1,20 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "../include/instructions.h"
 #include "../include/vm.h"
 
 
-int mai2n() {
+int maiwwn() {
     Byte Program[] = {
-        PUSH_IMM, 
-        HLT
+        0x2,0x0,
+        MOV_IMM,R1,0x4,0x0,
+        DIV_IMM,R1,0x2,0x0,
+        HLT,
     };    
+
     Vm vm;
     vm_init(&vm);
     
@@ -21,7 +25,7 @@ int mai2n() {
     
 
     print_internal(&vm);
-    return 1;
+    return 0;
 }
 
 int main(int argc, char* argv[]) {

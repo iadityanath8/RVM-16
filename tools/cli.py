@@ -19,9 +19,10 @@ class CLI:
 
     def read_ras(self,file_loc:str):
         file = open(file_loc)
-        content = file.read()
-        asm = Assembler()
-        bytecode = asm.assemble(content)
+        content = file.readlines()
+
+        asm = Assembler(content)
+        bytecode = asm.assemble()
         self.dump_file(bytecode)
 
     def parse_cmd(self):
@@ -39,6 +40,9 @@ class CLI:
                 self.usage()
 
     def dump_file(self,bytecode:bytearray):
+        for i in bytecode:
+            print(i, end = ",")
+        print()
         with open("output.rvm","wb") as f:
             f.write(bytecode)
             

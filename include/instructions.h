@@ -3,7 +3,7 @@
 
 typedef enum {
   MOV_REG = 0x01,  MOV_IMM,
-  LOAD, STORE,
+  LOAD, STORE_REG, STORE_IMM,
 
   ADD_REG, ADD_IMM,
   SUB_REG, SUB_IMM,
