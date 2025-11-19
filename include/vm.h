@@ -1,25 +1,14 @@
 #ifndef VM_H
 #define VM_H
 
-#define MAX 65535
-#define MAX_REG 8
-
 #include <stdint.h>
 #include <stdlib.h>
 #include "memory.h"
 #include <assert.h>
+#include "common.h"
+#include "mmio.h"
 
-
-#define vm_fetch_label(vm) \
-    Word entry = vm->mem[0] | (vm->mem[1] << 8);\
-    vm->pc = entry;
-
-
-typedef uint16_t    Word;
-typedef uint8_t     Byte;
-typedef uint32_t    u32;
-
-typedef struct {
+struct Vm{
     Word regs[MAX_REG];
     Byte mem[MAX];
     bool cf, of, zf, sf;
@@ -28,8 +17,8 @@ typedef struct {
     Word fp;
 
     bool halted;
-}Vm;
-
+};
+                
 
 static inline void vm_init(Vm* vm) {
     vm->cf = vm->sf = vm->of = vm->zf = false;
@@ -88,10 +77,26 @@ static inline void vm_setregister(Vm* vm, Reg reg, Word value) {
 }
 
 
+// TODO -> Make it compatible with mmio 
 static inline void vm_store16(Vm* vm, Word address, Word value) {
+    if (is_mmio_address(address)) {
+        mmio_write(vm,address,value & 0xFF);
+        // can be dangerous in here 
+        // mmio_write(vm, address + 1, (value >> 8) & 0xFF);
+        return;
+    }
     vm->mem[address] = value & 0xFF;
     vm->mem[address + 1] = (value >> 8) & 0xFF; 
 }
+
+static inline Word vm_read16(Vm *vm, Word address) {
+    if (is_mmio_address(address)) {
+        return mmio_read(vm, address);
+        // Byte high =  mmio_read(vm, address + 1);
+        // return (Word)((high << 8) | low);
+    }
+    return (vm->mem[address]) | (vm->mem[address + 1] << 8);
+} 
 
 static inline Byte vm_fetch8(Vm* vm) {
     return vm->mem[vm->pc++];
@@ -138,7 +143,9 @@ static inline void vm_step(Vm* vm) {
             Word offset = vm_fetch16(vm);
             Word addr = vm_getRegister(vm, r2) + offset;
             if (addr >= MAX) {fprintf(stderr,"Invalid memory access"); break;}
-            vm_setregister(vm, r1, (vm->mem[addr]) | (vm->mem[addr + 1] << 8)); 
+            
+            // TODO -> make it compatible with the mmio thing
+            vm_setregister(vm, r1, vm_read16(vm, addr));// (vm->mem[addr]) | (vm->mem[addr + 1] << 8)); 
         }break;
         case STORE_REG: {
             Byte r1 = vm_fetch8(vm);

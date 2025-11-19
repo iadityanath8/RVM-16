@@ -6,25 +6,30 @@
 #include "../include/instructions.h"
 #include "../include/vm.h"
 
-
-int maiwwn() {
+//#define IO_IN           0xFF00
+int mai2n() {
     Byte Program[] = {
-        0x2,0x0,
-        MOV_IMM,R1,0x4,0x0,
-        DIV_IMM,R1,0x2,0x0,
-        HLT,
-    };    
+        0x02,0x00,
+        MOV_IMM, R1, 0x00, 0xFF,   // R1 = 0xFF01 (IO_IN)
+        LOAD, R2, R1, 0x00, 0x00,  // R2 = [R1 + 0x00] -> reads one char
+
+        MOV_IMM, R1, 0x01, 0xFF,
+        STORE_REG, R1, 0x00, 0x00, R2,
+        // MOV_IMM, R1, 0x01, 0xFF,   // R1 = 0xFF00 (IO_OUT)
+        // STORE_REG, R1, 0x00, R2,   // prints char
+        HLT
+    };
+
 
     Vm vm;
     vm_init(&vm);
     
     Word prog_size = sizeof(Program) / sizeof(Program[0]);
     vm_load_program(&vm,Program,prog_size);
+
     
     vm_execute(&vm);
     
-
-    print_internal(&vm);
     return 0;
 }
 
@@ -49,12 +54,12 @@ int main(int argc, char* argv[]) {
         const char* filename = argv[2];
         size_t size = vm_load_bytecode_from_file(&vm, filename);
         
-        printf("✅ Loaded %zu bytes from '%s'\n", size, filename);
-        printf("▶ Running program...\n");
+        // printf("✅ Loaded %zu bytes from '%s'\n", size, filename);
+        // printf("▶ Running program...\n");
         
         vm_execute(&vm);
-        printf("✅ Program finished.\n");
-        print_internal(&vm);
+        // printf("✅ Program finished.\n");
+        // print_internal(&vm);
     }
 
     else if (strcmp(argv[1], "-dump") == 0) {

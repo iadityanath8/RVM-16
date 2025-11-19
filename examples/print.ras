@@ -1,0 +1,22 @@
+.entry main 
+
+hello_world:
+    mov r1, 0xFF01
+    store [r1], 'H'
+    store [r1], 'E'
+    store [r1], 'L'
+    store [r1], 'L'
+    store [r1], 'O'
+    store [r1], 32
+
+    store [r1], 'W'
+    store [r1], 'O'
+    store [r1], 'R'
+    store [r1], 'L'
+    store [r1], 'D'
+    store [r1], 10
+    ret
+    
+main:
+    call hello_world
+    hlt

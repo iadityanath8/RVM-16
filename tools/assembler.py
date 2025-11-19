@@ -98,6 +98,11 @@ class Assembler:
         elif cs.startswith('0x'):
             return u16(int(cs, 16))
         
+        elif cs.startswith("'") and cs.endswith("'") and len(cs) == 3:
+            print("THis -----------------",cs[1])
+            return u16(ord(cs[1]))  
+    
+
         raise ValueError(f"Invalid operand: {cs}")
 
     def pass_label(self, lines):
@@ -142,6 +147,7 @@ class Assembler:
                 continue
             
             if inst == 'store':
+                print("SHOIT")
                 bracket_end = line.find(']')
                 if bracket_end == -1:
                     raise ValueError("STORE instruction missing closing bracket")
@@ -153,9 +159,9 @@ class Assembler:
                 value_str = after_bracket.split()[0].strip().lower()
                 
                 if value_str in REG_TABLE or value_str in ('sp', 'fp', 'pc'):
-                    pc += 4  
-                else:
                     pc += 5  
+                else:
+                    pc += 6  
                 continue
             
             argc = entry["argc"]
@@ -271,6 +277,7 @@ class Assembler:
         """
         Parse STORE instruction: store [r1 +/- offset], value
         Supports:
+
         - store [fp - 2], 23        (immediate)
         - store [fp - 4], r0        (register)
         - store [r1 + 100], r2      (register)
@@ -299,6 +306,8 @@ class Assembler:
         else:
             if value_str.startswith('0x'):
                 imm = int(value_str, 16)
+            elif value_str.startswith("'") and value_str.endswith("'") and len(value_str) == 3:
+                imm = int(ord(value_str[1]))  
             else:
                 imm = int(value_str)
             
