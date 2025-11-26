@@ -1,0 +1,17 @@
+; mathematical test in here 
+
+; push 1 
+; push 2 
+; this test is done in a way that we can have the prolog and epilog of the system to check 
+; if it is working or not 
+add_fn: 
+    push fp
+    mov fp, sp 
+
+    load r1, [fp + 4]
+    load r2, [fp + 6]
+    add r1, r2
+
+    mov sp, fp 
+    pop fp 
+    ret

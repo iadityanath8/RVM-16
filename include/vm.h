@@ -8,17 +8,15 @@
 #include "common.h"
 #include "mmio.h"
 
-struct Vm{
-    Word regs[MAX_REG];
-    Byte mem[MAX];
-    bool cf, of, zf, sf;
-    Word pc;
-    Word sp;
-    Word fp;
 
+struct Vm {
+    Byte mem[MAX];
+    Word regs[MAX_REG];
+    Word pc, fp, sp;
+    bool zf, cf, of, sf;
     bool halted;
 };
-                
+
 
 static inline void vm_init(Vm* vm) {
     vm->cf = vm->sf = vm->of = vm->zf = false;
@@ -80,7 +78,7 @@ static inline void vm_setregister(Vm* vm, Reg reg, Word value) {
 // TODO -> Make it compatible with mmio 
 static inline void vm_store16(Vm* vm, Word address, Word value) {
     if (is_mmio_address(address)) {
-        mmio_write(vm,address,value & 0xFF);
+        mmio_write(vm,address,value);
         // can be dangerous in here 
         // mmio_write(vm, address + 1, (value >> 8) & 0xFF);
         return;
@@ -89,6 +87,7 @@ static inline void vm_store16(Vm* vm, Word address, Word value) {
     vm->mem[address + 1] = (value >> 8) & 0xFF; 
 }
 
+// wrong this thing in here 
 static inline Word vm_read16(Vm *vm, Word address) {
     if (is_mmio_address(address)) {
         return mmio_read(vm, address);
@@ -143,9 +142,7 @@ static inline void vm_step(Vm* vm) {
             Word offset = vm_fetch16(vm);
             Word addr = vm_getRegister(vm, r2) + offset;
             if (addr >= MAX) {fprintf(stderr,"Invalid memory access"); break;}
-            
-            // TODO -> make it compatible with the mmio thing
-            vm_setregister(vm, r1, vm_read16(vm, addr));// (vm->mem[addr]) | (vm->mem[addr + 1] << 8)); 
+            vm_setregister(vm, r1, vm_read16(vm, addr)); 
         }break;
         case STORE_REG: {
             Byte r1 = vm_fetch8(vm);
@@ -155,6 +152,7 @@ static inline void vm_step(Vm* vm) {
             if (addr >= MAX) {printf("Invalid memory access"); break;}
             vm_store16(vm, addr, vm_getRegister(vm, src));
         }break;
+        // in future direct store into static memory 
         case STORE_IMM: {
             Byte r1 = vm_fetch8(vm);         
             Word offset = vm_fetch16(vm);    

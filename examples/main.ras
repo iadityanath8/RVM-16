@@ -1,0 +1,16 @@
+.import 'includes/io.ras'
+
+print_string:
+loop:
+    load r2, [r1]          
+    and r2, 0xFF 
+    cmp r2, 0
+    je done
+
+    mov r3, IOPUT   
+    store [r3], r2    
+    inc r1           
+    jmp loop
+
+done:
+    ret

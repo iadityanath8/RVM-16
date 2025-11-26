@@ -1,0 +1,10 @@
+.define IOPUT 0xFF01
+.define IOIN  0xFF00
+
+; abi for this is pass function argument in 
+; r6,r7,r8 passing to the function 
+;  
+putchar:
+    mov r7, IOPUT
+    store [r7], r6
+    ret 

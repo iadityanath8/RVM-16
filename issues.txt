@@ -1,0 +1,4 @@
+1 -> data only support initialization after main  []
+     wanna make it support anywhere in the program 
+2 -> comments not working with line               []
+3 -> load8 adn store8 supprot                     []

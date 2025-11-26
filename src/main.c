@@ -7,10 +7,14 @@
 #include "../include/vm.h"
 
 //#define IO_IN           0xFF00
+// [0x00] [0xff]
+// 0 - 255 
+// little endian  16 65535 2**64 
+
 int mai2n() {
     Byte Program[] = {
-        0x02,0x00,
-        MOV_IMM, R1, 0x00, 0xFF,   // R1 = 0xFF01 (IO_IN)
+        0x02,0x00, //
+        MOV_IMM, R1, 0x00, 0xFF,   // R1 = 0xFF00 (IO_IN)
         LOAD, R2, R1, 0x00, 0x00,  // R2 = [R1 + 0x00] -> reads one char
 
         MOV_IMM, R1, 0x01, 0xFF,
@@ -58,6 +62,7 @@ int main(int argc, char* argv[]) {
         // printf("▶ Running program...\n");
         
         vm_execute(&vm);
+        // printf("memory address at 21 is %d\n", vm.mem[21]);
         // printf("✅ Program finished.\n");
         // print_internal(&vm);
     }

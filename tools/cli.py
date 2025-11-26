@@ -21,9 +21,10 @@ class CLI:
         file = open(file_loc)
         content = file.readlines()
 
-        asm = Assembler(content)
+        asm = Assembler(content,file_loc)
         bytecode = asm.assemble()
         self.dump_file(bytecode)
+        # print(asm.labels)
 
     def parse_cmd(self):
         first = self.arglist[1]
@@ -40,9 +41,9 @@ class CLI:
                 self.usage()
 
     def dump_file(self,bytecode:bytearray):
-        for i in bytecode:
-            print(i, end = ",")
-        print()
+        # for i in bytecode:
+        #     print(i, end = ",")
+        
         with open("output.rvm","wb") as f:
             f.write(bytecode)
             

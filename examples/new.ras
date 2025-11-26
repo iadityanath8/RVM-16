@@ -1,0 +1,33 @@
+.import 'includes/io.ras'
+.entry main 
+
+
+
+print_message:
+    ; r6 = pointer to string
+    push fp
+loop:
+    load  r2, [r6]
+    cmp   r2, 0
+    je    done        
+
+    ; To check 
+    push r6
+    mov   r6, r2       
+    call  putchar
+    pop r6
+    inc   r6
+    jmp   loop
+
+done:
+    pop fp
+    ret
+
+
+main:
+    mov r6, msg 
+    call print_message
+    hlt
+
+msg:
+    .string "Meow Worxz"

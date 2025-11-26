@@ -1,5 +1,6 @@
 from instructions import Inst, Reg
 import re
+from pathlib import Path
 
 INST_TABLE = {
     'mov': {'reg': Inst.MOV_REG, 'imm': Inst.MOV_IMM, 'argc': 2},
@@ -42,7 +43,6 @@ def expect_arg(inst,num:int):
     else:
         return False
     
-
 def u16(n: int) -> list[int]:
     return [n & 0xFF, (n >> 8) & 0xFF]
 
@@ -50,22 +50,48 @@ def as_list(x):
     return [x] if isinstance(x, int) else x
 
 
+
+class Importer:
+    def __init__(self, file_name, asm_state):
+        self.file_name = file_name
+        self.parent = asm_state
+
+    def fetch_file(self) -> str:
+        with open(self.file_name) as f:
+            source = f.readlines()        
+        return source
+
+    def import_(self):
+        content = self.fetch_file()
+        child = Assembler(content, str(self.file_name))
+        child.importer = True 
+        bytcde = child.assemble()
+
+        self.parent.labels.update(child.labels)
+        self.parent.resource_table.update(child.resource_table)
+        return bytcde
+
 class Assembler:
-    def __init__(self, content: str):
+    def __init__(self, content: str, file_loc: str):
         self.cleaned = [line for line in content if line.strip() != ""]
         self.labels = {}
         self.program  = bytearray()
         self.entry_label = None 
         self.entry_point = None 
+        self.resource_table = {}
+        self.pc = 0
+        self.file_loc = Path(file_loc)
+        self.importer = False
+        self.data = bytearray()
 
     def get_reg(self,name: str) -> Reg:
-        key = name.lower()
+        key = name#.lower()
         if key not in REG_TABLE:
             raise ValueError(f"Unknown register: {name}")
         return REG_TABLE[key]
     
     def get_opcode(self, name: str, args: list):
-        name = name.lower()
+        name = name#.lower()
         
         if name not in INST_TABLE:
             raise ValueError(f"Unknown instruction: {name}")
@@ -81,17 +107,23 @@ class Assembler:
 
         operand = args[-1]
 
-        if operand.lower().startswith('r') or operand in ('fp', 'sp', 'pc'):
+        if operand.startswith('r') or operand in ('fp', 'sp', 'pc'):
             return entry["reg"]
         else:
             return entry["imm"]
 
     def get_reg_imm(self,cs:str) -> int: 
-        cs = cs.lower().strip()
+        cs = cs.strip() #
 
         if cs in REG_TABLE:
             return REG_TABLE[cs].value
         
+        if cs in self.resource_table:
+            return u16(self.resource_table[cs])
+        
+        if cs in self.labels:
+            return u16(self.labels[cs] + 2)
+
         if cs.isnumeric():
             return u16(int(cs))
         
@@ -99,14 +131,22 @@ class Assembler:
             return u16(int(cs, 16))
         
         elif cs.startswith("'") and cs.endswith("'") and len(cs) == 3:
-            print("THis -----------------",cs[1])
             return u16(ord(cs[1]))  
     
 
         raise ValueError(f"Invalid operand: {cs}")
 
+    def is_char(self, ch):
+        if ch.startswith("'") and ch.endswith("'") and len(ch) == 3:
+            return True 
+        return False
+
+    def is_hex(self, ch):
+        if ch.startswith('0x'):
+            return True
+        return False 
+
     def pass_label(self, lines):
-        pc = 0
         for line in lines:
             line = line.strip()
             
@@ -115,16 +155,66 @@ class Assembler:
             
             if line.startswith(".entry"):
                 parts = line.split()
+
+                if self.entry_label:
+                    raise ValueError(".entry can be define only once")
+
                 if len(parts) != 2:
                     raise ValueError(".entry must be followed by a label name")
                 self.entry_label = parts[1].strip()
                 continue
             
-            if ":" in line:
+            elif line.startswith('.define'):
+                parts = line.split()
+                if len(parts) != 3:
+                    raise ValueError(".define must have the label and a number")
+
+                if parts[1] in self.resource_table:
+                    raise ValueError(f".local symbol {parts[1]} already exist")
+                
+                if self.is_char(parts[2]):
+                    self.resource_table[parts[1]] = int(ord(parts[2][1]))  
+                elif self.is_hex(parts[2]):
+                    self.resource_table[parts[1]] = int(parts[2], 16)
+                else:
+                    self.resource_table[parts[1]] = u16(int(parts[2]))
+            
+            elif line.startswith('.import'):
+                parts = line.split()
+                if len(parts) < 2:
+                    raise ValueError("import path missing")
+
+                l = len(parts[1])
+                map_ = self.file_loc.parent / parts[1][1:l-1]
+                im = Importer(map_, self)
+                byt = im.import_()
+                self.pc += len(byt)
+                self.program += byt
+
+            elif line.startswith('.string'):
+                text = line[7:].strip()
+                if text.startswith('"') and text.endswith('"'):
+                    text = text[1:-1]
+                
+                text = text.replace('\\n', '\n').replace('\\t', '\t')
+                
+                for ch in text:
+                    self.data.append(ord(ch))
+                    self.pc += 1
+                
+                # automatic null terminator
+                self.data.append(0)
+                self.pc += 1
+                continue
+
+            elif ":" in line:
                 colon_pos = line.find(":")
                 label_name = line[:colon_pos].strip()
-                self.labels[label_name] = pc
-                
+
+                if label_name in self.labels:
+                    raise ValueError(f"{label_name} label already defined")
+
+                self.labels[label_name] = self.pc     
                 after_label = line[colon_pos + 1:].strip()
                 if not after_label or after_label.startswith(";") or after_label.startswith("#"):
                     continue  
@@ -135,7 +225,7 @@ class Assembler:
             if not parts:
                 continue
             
-            inst = parts[0].lower()
+            inst = parts[0]#lower
             
             if inst not in INST_TABLE:
                 continue     
@@ -143,11 +233,10 @@ class Assembler:
             entry = INST_TABLE[inst]
             
             if inst == 'load':
-                pc += 5  
+                self.pc += 5  
                 continue
             
             if inst == 'store':
-                print("SHOIT")
                 bracket_end = line.find(']')
                 if bracket_end == -1:
                     raise ValueError("STORE instruction missing closing bracket")
@@ -156,44 +245,41 @@ class Assembler:
                 if after_bracket.startswith(','):
                     after_bracket = after_bracket[1:].strip()
                 
-                value_str = after_bracket.split()[0].strip().lower()
+                value_str = after_bracket.split()[0].strip()#.lower()
                 
                 if value_str in REG_TABLE or value_str in ('sp', 'fp', 'pc'):
-                    pc += 5  
+                    self.pc += 5  
                 else:
-                    pc += 6  
+                    self.pc += 6  
                 continue
             
             argc = entry["argc"]
-            pc += 1  # opcode byte
+            self.pc += 1  
             
             if argc == 0:
                 continue
             
             if argc == 1:
-                arg = parts[1].lower()
-                # Check if it's a label (will be resolved as 16-bit address)
+                arg = parts[1]#.lower()
                 if arg in self.labels:
-                    pc += 2
-                # Check if it's a register (8-bit)
+                    self.pc += 2
+
                 elif arg.startswith("r") or arg in ("sp", "fp", "pc"):
-                    pc += 1
-                # Otherwise it's an immediate (16-bit)
+                    self.pc += 1
+                
                 else:
-                    pc += 2
+                    self.pc += 2
                 continue
 
             if argc == 2:
-                pc += 1  # First operand (always register, 8-bit)
-                operand = parts[2].lower()
+                self.pc += 1  
+                operand = parts[2]#.lower()
                 
-                # Second operand: register (8-bit) or immediate (16-bit)
                 if operand.startswith("r") or operand in ("sp", "fp", "pc"):
-                    pc += 1
+                    self.pc += 1
                 else:
-                    pc += 2
+                    self.pc += 2
         
-        # Set entry point
         if self.entry_label:
             if self.entry_label not in self.labels:
                 raise ValueError(f"Entry label '{self.entry_label}' not defined")
@@ -201,11 +287,9 @@ class Assembler:
         else:
             if "start" in self.labels:
                 self.entry_point = self.labels["start"]
-            else:
+            elif self.importer is False:
                 raise ValueError("No .entry directive and no 'start:' label found!")
-        
-        return pc
-
+    
     def parse_address_expression(self, expr: str) -> tuple[int, int]:
         """
         Parse address expressions like:
@@ -299,7 +383,7 @@ class Assembler:
         
         offset_bytes = u16(offset)
         
-        if value_str.lower() in REG_TABLE or value_str.lower() in ('sp', 'fp', 'pc'):
+        if value_str in REG_TABLE or value_str in ('sp', 'fp', 'pc'):
             src_code = self.get_reg(value_str).value
             store_code = Inst.STORE_REG.value
             self.program.extend([store_code, r1_code, *offset_bytes, src_code])
@@ -308,6 +392,8 @@ class Assembler:
                 imm = int(value_str, 16)
             elif value_str.startswith("'") and value_str.endswith("'") and len(value_str) == 3:
                 imm = int(ord(value_str[1]))  
+            elif value_str in self.resource_table:
+                imm = self.resource_table[value_str]
             else:
                 imm = int(value_str)
             
@@ -330,7 +416,7 @@ class Assembler:
                     mov_code = self.get_opcode(parts[0],parts).value
                     r_imm_code = self.get_reg_imm(parts[2])                
                     self.program.extend([mov_code,r_code,*as_list(r_imm_code)])
-                
+                    
                 case 'load':
                     self.parse_load_instruction(cs, parts)
                 case 'store':
@@ -341,19 +427,17 @@ class Assembler:
                     r_imm_code = self.get_reg_imm(parts[1])
                     self.program.extend([inc_code,r_imm_code])
 
-                # jump inst
                 case 'cmp':
                     r_code = self.get_reg(parts[1]).value
                     cmp_code = self.get_opcode('cmp', parts).value
                     r_imm_code = self.get_reg_imm(parts[2])
                     self.program.extend([cmp_code,r_code,*as_list(r_imm_code)])
 
-                case 'jmp' | 'ja' | 'jae' | 'jg' | 'jge':
+                case 'jmp' | 'ja' | 'jae' | 'jg' | 'jge' | 'je':
                     jmp_code = self.get_opcode(parts[0], parts).value
-                    lbl = u16(self.labels[parts[1]])
+                    lbl = u16(self.labels[parts[1]] + 2)
                     self.program.extend([jmp_code,*lbl])
                 
-                #stack inst
                 case 'push' | 'pop':
                     push_code = self.get_opcode(parts[0], parts).value
                     addr = self.get_reg_imm(parts[1])
@@ -362,7 +446,6 @@ class Assembler:
                 case 'call':
                     call_code = self.get_opcode('call', parts).value
                     addr = u16(self.labels[parts[1]] + 2)
-                    print(self.labels[parts[1]] + 2)
                     self.program.extend([call_code,*as_list(addr)])
 
                 case 'ret':
@@ -374,7 +457,7 @@ class Assembler:
                     self.program.append(hlt_code.value)
                 case ';':
                     pass
-                case '.entry':
+                case '.entry' | '.define' | '.import' | '.string':
                     pass
                 case _:
                     raise ValueError("Unknown instruction", parts[0])
@@ -384,23 +467,16 @@ class Assembler:
         for idx, line in enumerate(self.cleaned):
             self.parse_line(line,idx)
         
-        if self.entry_point is None:
+        if self.entry_point is None and self.importer == False:
             raise ValueError('Entry point not set (use `.entry <label>`)')
 
-        entry_bytes = u16(self.entry_point + 2)
-        full_program = bytearray(entry_bytes) + self.program
+        if self.importer is False:
+            entry_bytes = u16(self.entry_point + 2)
+            full_program = bytearray(entry_bytes) + self.program
+        else: 
+            full_program = self.program
+        
+        full_program += self.data
         return full_program
 
     
-if __name__ == '__main__':
-    content = open("main.ras").readlines()
-    ass = Assembler(content)
-    bytecode = ass.assemble()
-
-    for i in bytecode:  
-        print(i, end=",")
-
-    print("This is",ass.entry_point)
-
-    with open('main.rvm','wb') as f:
-        f.write(bytecode)
