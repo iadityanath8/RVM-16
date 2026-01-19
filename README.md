@@ -1,4 +1,4 @@
-# 🖥️RVM Custom 16-bit Virtual Machine & Assembler
+# 🖥️RVM-16 Custom 16-bit Virtual Machine & Assembler
 
 A lightweight, educational 16-bit virtual machine with a custom instruction set and Python-based assembler. Features include arithmetic operations, memory addressing, stack management, function calls, and memory-mapped I/O.
 
@@ -66,10 +66,10 @@ git clone https://github.com/iadityanath8/rvm-16.git
 cd custom-vm
 
 # Compile the VM
-gcc -o vm vm.c -Wall -Wextra
+gcc -o rvm vm.c -Wall -Wextra
 
 # Or with optimizations
-gcc -o vm vm.c -O3 -Wall -Wextra
+gcc -o rvm vm.c -O3 -Wall -Wextra
 ```
 
 ### Install Python dependencies
@@ -111,7 +111,7 @@ python assembler.py hello.ras -o hello.rvm
 ### 3. Run on VM
 
 ```bash
-./vm hello.rvm
+./rvm hello.rvm
 ```
 
 Output:
